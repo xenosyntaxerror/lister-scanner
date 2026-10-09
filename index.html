@@ -77,7 +77,7 @@
   .row { display: flex; gap: 8px; margin-bottom: 16px; }
   .row input {
     flex: 1; min-width: 0; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
-    background: var(--panel); color: var(--text); font-size: 17px; text-transform: uppercase;
+    background: var(--panel); color: var(--text); font-size: 17px;
   }
   .btn-outline {
     padding: 0 16px; min-height: 46px; border-radius: 10px; border: 1px solid var(--accent-dark);
@@ -127,7 +127,7 @@
 
     <p class="label">Or type it</p>
     <form class="row" id="manualForm" autocomplete="off">
-      <input id="manualInput" type="text" autocapitalize="characters" spellcheck="false" placeholder="UPC">
+      <input id="manualInput" type="text" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="UPC or product name">
       <button class="btn-outline" type="submit">Send</button>
     </form>
 
@@ -173,8 +173,8 @@
       const asin = others.find((t) => ASIN_RE.test(t) && /[A-Z]/.test(t) && !FNSKU_RE.test(t));
       if (asin) return { code: asin };
       if (retail.length) return { code: retail[0] };
-      if (others.some((t) => FNSKU_RE.test(t))) return { error: "That's an Amazon X00 (FNSKU) label, which can't be looked up. Type the ASIN below instead.", key: "fnsku" };
-      if (others.some((t) => LPN_RE.test(t))) return { error: "That's an Amazon LPN return label. Look for the item's UPC, or type the ASIN below.", key: "lpn" };
+      if (others.some((t) => FNSKU_RE.test(t))) return { error: "That's an Amazon X00 sticker, which Amazon can't look up. Type the product name printed on it below instead.", key: "fnsku" };
+      if (others.some((t) => LPN_RE.test(t))) return { error: "That's an Amazon LPN return label. Look for the item's UPC, or type the product name below.", key: "lpn" };
       return null;
     }
     if (retail.length) return { code: retail[0] };
@@ -274,7 +274,7 @@
       });
       box.appendChild(b);
     });
-    $("manualInput").placeholder = source === "amazon" ? "ASIN (B0...) or UPC" : "UPC";
+    $("manualInput").placeholder = source === "amazon" ? "ASIN, UPC, or product name" : "UPC or product name";
   }
 
   // ---- camera scanning ------------------------------------------------------
@@ -408,7 +408,10 @@
 
     $("manualForm").addEventListener("submit", (event) => {
       event.preventDefault();
-      const code = $("manualInput").value.trim().toUpperCase();
+      // Codes go uppercase; a product name (anything with a space) is sent
+      // as typed and becomes a store search on the PC.
+      const raw = $("manualInput").value.trim().replace(/\s+/g, " ");
+      const code = /\s/.test(raw) ? raw : raw.toUpperCase();
       if (!code) return;
       $("manualInput").value = "";
       send(code, "typed");
