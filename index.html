@@ -38,10 +38,10 @@
   }
   h1 { font-size: 19px; margin: 2px 0 12px; }
   .label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 6px; }
-  .stores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .stores { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
   .store {
     padding: 13px 8px; border-radius: 12px; border: 2px solid var(--border); background: var(--panel);
-    color: var(--text); font-size: 17px; font-weight: 700;
+    color: var(--text); font-size: 15px; font-weight: 700;
   }
   .store[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
 
@@ -139,7 +139,7 @@
   import { readBarcodes } from "https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.4/dist/es/reader/index.js";
 
   const RELAY = "https://ntfy.sh/";
-  const SOURCES = [{ id: "homedepot", label: "Home Depot" }, { id: "amazon", label: "Amazon" }];
+  const SOURCES = [{ id: "homedepot", label: "Home Depot" }, { id: "amazon", label: "Amazon" }, { id: "walmart", label: "Walmart" }];
   const FORMATS = ["UPC-A", "UPC-E", "EAN-13", "EAN-8", "Code128", "Code39"];
   const SAME_CODE_COOLDOWN_MS = 8000;   // holding the camera on one item shouldn't send it over and over
   const ACK_TIMEOUT_MS = 10000;
@@ -274,7 +274,7 @@
       });
       box.appendChild(b);
     });
-    $("manualInput").placeholder = source === "amazon" ? "ASIN, UPC, or product name" : "UPC or product name";
+    $("manualInput").placeholder = { amazon: "ASIN, UPC, or product name", walmart: "UPC, Walmart item #, or product name" }[source] || "UPC or product name";
   }
 
   // ---- camera scanning ------------------------------------------------------
