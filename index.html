@@ -7,14 +7,21 @@
 <meta name="theme-color" content="#f96302">
 <title>Lister Scanner</title>
 <!--
-  Liquid Bidding Lister -- phone scanner page (hosted on GitHub Pages).
+  Liquid Bidding Lister -- phone page (hosted on GitHub Pages).
 
-  The phone reads the barcode itself (zxing-wasm, live from the camera) and
-  posts the code to a private ntfy.sh topic. The Lister on the PC keeps an
-  outgoing connection open to that same topic, so it receives the code
-  without ever accepting an incoming connection (which work firewalls
-  block). The Lister then answers on "<topic>-ack" so this page can show
-  whether the item was actually opened on the PC.
+  Two tabs:
+    * Scan      -- the phone reads a barcode (zxing-wasm, live from the camera)
+                   and posts the code to a private ntfy.sh topic. The Lister on
+                   the PC keeps an outgoing connection open to that topic, so it
+                   receives the code without ever accepting an incoming
+                   connection (work firewalls block those). The Lister answers
+                   on "<topic>-ack" so this page can show whether it worked.
+    * Edit item -- shows whatever item is open on the PC (the Lister pushes it
+                   on "<topic>-item"), lets you fix every field, and pushes the
+                   whole set back ONLY when "Update Lister" is pressed -- so an
+                   accidental tap here can never quietly overwrite the PC. Edits
+                   go to the same "<topic>" tagged type:"edit"; a request for
+                   the current item is tagged type:"requestItem".
 
   The topic comes from the QR code the Lister shows, in the part of the URL
   after "#" -- browsers never send that part to GitHub's servers. It's saved
@@ -24,27 +31,37 @@
   :root {
     --bg: #f4f5f7; --panel: #fff; --text: #1d1f23; --muted: #666b75; --border: #d6d9de;
     --accent: #f96302; --accent-dark: #c94f00; --ok: #1e9e57; --err: #d0342c; --warn: #b7791f;
+    --chip: #eceef1; --chip-on: #f96302;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #15171a; --panel: #1f2226; --text: #eceef1; --muted: #9aa0a8; --border: #33373d; }
+    :root { --bg: #15171a; --panel: #1f2226; --text: #eceef1; --muted: #9aa0a8; --border: #33373d; --chip: #2a2e33; }
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    margin: 0 auto; padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
     background: var(--bg); color: var(--text);
     font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent;
-    max-width: 560px; margin: 0 auto;
+    max-width: 560px;
   }
-  h1 { font-size: 19px; margin: 2px 0 12px; }
-  .label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 6px; }
+  h1 { font-size: 19px; margin: 2px 0 10px; }
+  .label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  .label:first-child { margin-top: 0; }
+
+  /* -- tabs ----------------------------------------------------------------- */
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px;
+          background: var(--chip); padding: 4px; border-radius: 12px; }
+  .tab { padding: 11px 8px; border-radius: 9px; border: 0; background: transparent;
+         color: var(--text); font-size: 15px; font-weight: 700; }
+  .tab[aria-selected="true"] { background: var(--accent); color: #fff; }
+
+  /* -- scan tab ------------------------------------------------------------- */
   .stores { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
   .store {
     padding: 13px 8px; border-radius: 12px; border: 2px solid var(--border); background: var(--panel);
     color: var(--text); font-size: 15px; font-weight: 700;
   }
   .store[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
-
   .viewer {
     position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden;
     background: #000; margin-bottom: 8px;
@@ -95,44 +112,173 @@
   .entry .msg { font-size: 14px; overflow-wrap: anywhere; }
   .entry .meta { font-size: 12px; color: var(--muted); }
   .setup { padding: 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); }
+
+  /* -- edit tab ------------------------------------------------------------- */
+  .edit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .edit-head .btn-outline { min-height: 42px; }
+  .edit-status { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .edit-status.ok { color: var(--ok); } .edit-status.err { color: var(--err); } .edit-status.wait { color: var(--warn); }
+  .edit-banner {
+    display: flex; align-items: center; gap: 10px; justify-content: space-between;
+    padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
+    background: rgba(183,121,31,.14); border: 1px solid var(--warn); color: var(--text); font-size: 14px; font-weight: 600;
+  }
+  .edit-banner button { border: 0; border-radius: 8px; padding: 8px 12px; background: var(--warn); color: #fff; font-weight: 700; }
+  .edit-empty { padding: 22px 16px; text-align: center; color: var(--muted); background: var(--panel);
+                border: 1px dashed var(--border); border-radius: 12px; }
+
+  #editForm input[type="text"], #editForm input[type="number"], #editForm textarea {
+    width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 17px; font-family: inherit;
+  }
+  #editForm textarea { resize: vertical; min-height: 48px; }
+  .edit-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .msrp-line { display: flex; align-items: center; gap: 7px; margin-top: 7px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .msrp-line input { width: 20px; height: 20px; }
+
+  .pill-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    padding: 11px 14px; border-radius: 999px; border: 2px solid var(--border); background: var(--panel);
+    color: var(--text); font-size: 15px; font-weight: 700;
+  }
+  .pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
+
+  .yn-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .yn-row .yn-label { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
+  .yn-btn { min-width: 58px; padding: 10px 12px; border-radius: 10px; border: 2px solid var(--border);
+            background: var(--panel); color: var(--text); font-size: 15px; font-weight: 700; }
+  .yn-btn.yes[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .yn-btn.no[aria-pressed="true"] { background: var(--err); border-color: var(--err); color: #fff; }
+
+  .tags-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px;
+              border-radius: 10px; border: 1px solid var(--border); background: var(--panel); }
+  .tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
+              background: var(--chip); font-size: 14px; font-weight: 600; }
+  .tag-chip .x { color: var(--muted); font-weight: 800; }
+  .tags-box input { flex: 1; min-width: 90px; border: 0; background: transparent; color: var(--text); font-size: 16px; padding: 6px; }
+  .tags-box input:focus { outline: none; }
+
+  .update-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--panel); border-top: 1px solid var(--border);
+  }
+  .update-bar .inner { max-width: 560px; margin: 0 auto; }
+  .update-btn { width: 100%; min-height: 52px; border: 0; border-radius: 12px; background: var(--accent);
+                color: #fff; font-size: 18px; font-weight: 800; }
+  .update-btn:disabled { opacity: .5; }
+  .edit-pad { height: 78px; }  /* keeps the sticky Update bar from covering the last field */
 </style>
 </head>
 <body>
-  <h1>Liquid Bidding Scanner</h1>
+  <h1>Liquid Bidding Lister</h1>
 
   <div id="setupNeeded" class="setup" hidden>
     <strong>Not paired yet.</strong>
-    <p>On the PC, open the Lister and click <b>Phone Scanner&hellip;</b>, then scan its QR code with this phone's camera.</p>
+    <p>On the PC, open the Lister and click <b>Phone&hellip;</b>, then scan its QR code with this phone's camera.</p>
   </div>
 
   <div id="main" hidden>
-    <p class="label">Item is from</p>
-    <div class="stores" id="stores"></div>
+    <div class="tabs" role="tablist">
+      <button id="tabBtnScan" class="tab" role="tab" aria-selected="true" type="button">Scan</button>
+      <button id="tabBtnEdit" class="tab" role="tab" aria-selected="false" type="button">Edit item</button>
+    </div>
 
-    <div class="viewer">
-      <video id="video" playsinline muted autoplay></video>
-      <div id="guide" class="guide"></div>
-      <button id="torchBtn" class="torch" type="button" hidden>Light</button>
-      <div id="viewerMsg" class="viewer-msg">
-        <div>
-          <div id="viewerMsgText">Point the camera at a barcode.</div>
-          <button id="startBtn" type="button">Start camera</button>
+    <!-- ============================ SCAN TAB ============================ -->
+    <section id="tabScan" role="tabpanel">
+      <p class="label">Item is from</p>
+      <div class="stores" id="stores"></div>
+
+      <div class="viewer">
+        <video id="video" playsinline muted autoplay></video>
+        <div id="guide" class="guide"></div>
+        <button id="torchBtn" class="torch" type="button" hidden>Light</button>
+        <div id="viewerMsg" class="viewer-msg">
+          <div>
+            <div id="viewerMsgText">Point the camera at a barcode.</div>
+            <button id="startBtn" type="button">Start camera</button>
+          </div>
         </div>
       </div>
-    </div>
-    <div id="statusLine" class="status-line">Line the barcode up inside the box.</div>
+      <div id="statusLine" class="status-line">Line the barcode up inside the box.</div>
 
-    <button id="photoBtn" class="btn-outline photo-btn" type="button">Take a photo instead</button>
-    <input id="photoInput" type="file" accept="image/*" capture="environment">
+      <button id="photoBtn" class="btn-outline photo-btn" type="button">Take a photo instead</button>
+      <input id="photoInput" type="file" accept="image/*" capture="environment">
 
-    <p class="label">Or type it</p>
-    <form class="row" id="manualForm" autocomplete="off">
-      <input id="manualInput" type="text" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="UPC or product name">
-      <button class="btn-outline" type="submit">Send</button>
-    </form>
+      <p class="label">Or type it</p>
+      <form class="row" id="manualForm" autocomplete="off">
+        <input id="manualInput" type="text" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="UPC or product name">
+        <button class="btn-outline" type="submit">Send</button>
+      </form>
 
-    <p class="label">Sent to the Lister</p>
-    <div class="log" id="log"></div>
+      <p class="label">Sent to the Lister</p>
+      <div class="log" id="log"></div>
+    </section>
+
+    <!-- ============================ EDIT TAB ============================ -->
+    <section id="tabEdit" role="tabpanel" hidden>
+      <div class="edit-head">
+        <button id="loadItemBtn" class="btn-outline" type="button">Load current item</button>
+        <span id="editStatus" class="edit-status"></span>
+      </div>
+
+      <div id="editBanner" class="edit-banner" hidden>
+        <span>The PC's item changed.</span>
+        <button id="bannerLoadBtn" type="button">Load it</button>
+      </div>
+
+      <div id="editEmpty" class="edit-empty">No item is open on the PC yet. Scan one, or tap &ldquo;Load current item&rdquo;.</div>
+
+      <form id="editForm" autocomplete="off" hidden>
+        <p class="label">Name</p>
+        <textarea id="eName" rows="2" autocapitalize="sentences" spellcheck="true"></textarea>
+
+        <div class="edit-two">
+          <div>
+            <p class="label">Price</p>
+            <input id="ePrice" type="text" inputmode="decimal" autocomplete="off">
+            <label class="msrp-line"><input id="eMsrp" type="checkbox"> Include MSRP</label>
+          </div>
+          <div>
+            <p class="label">Quantity</p>
+            <input id="eQty" type="number" min="0" step="1" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+
+        <p class="label">Model #</p>
+        <input id="eModel" type="text" autocomplete="off">
+
+        <p class="label">Condition</p>
+        <div id="eCondition" class="pill-grid"></div>
+
+        <p class="label">Accessories</p>
+        <div id="eYesNo"></div>
+
+        <p class="label">Inspection checklist</p>
+        <div id="eChecklist" class="pill-grid"></div>
+
+        <p class="label">Tags</p>
+        <div class="tags-box" id="eTagsBox">
+          <span id="eTagChips"></span>
+          <input id="eTagInput" type="text" autocomplete="off" enterkeyhint="done" placeholder="type a tag, comma to add&hellip;">
+        </div>
+
+        <p class="label">Notes</p>
+        <input id="eNotes" type="text" autocomplete="off">
+
+        <p class="label">Disclaimer</p>
+        <div id="eDisclaimer" class="pill-grid"></div>
+        <div id="eCasesWrap" hidden>
+          <p class="label">Cases you have</p>
+          <input id="eCases" type="number" min="0" step="any" inputmode="decimal" autocomplete="off" placeholder="e.g. 5">
+        </div>
+
+        <div class="edit-pad"></div>
+      </form>
+    </section>
+  </div>
+
+  <div id="updateBar" class="update-bar" hidden>
+    <div class="inner"><button id="updateBtn" class="update-btn" type="button">Update Lister</button></div>
   </div>
 
 <script type="module">
@@ -144,6 +290,7 @@
   const SAME_CODE_COOLDOWN_MS = 8000;   // holding the camera on one item shouldn't send it over and over
   const ACK_TIMEOUT_MS = 10000;
   const $ = (id) => document.getElementById(id);
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
   // ---- pairing ------------------------------------------------------------
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -155,8 +302,6 @@
   if (topic && !fromHash) history.replaceState(null, "", "#" + topic);  // keep bookmarks working
 
   // ---- picking the right code ----------------------------------------------
-  // Same rules as the Lister uses: a box/label can carry several barcodes, so
-  // pick the one this store can actually look up.
   const ASIN_RE = /^[A-Z0-9]{10}$/;
   const FNSKU_RE = /^X0[A-Z0-9]{8}$/;
   const LPN_RE = /^LPN[A-Z0-9]+$/;
@@ -183,13 +328,25 @@
   }
 
   // ---- sending + acknowledgements ----------------------------------------
-  const pending = new Map();  // scan id -> { entry, timer }
+  const pending = new Map();      // scan id -> { entry, timer }  (Scan tab)
+  const editPending = new Map();  // edit id -> { timer }         (Edit tab)
 
   function listenForAcks() {
     const events = new EventSource(RELAY + encodeURIComponent(topic + "-ack") + "/sse");
     events.onmessage = (event) => {
       let ack;
       try { ack = JSON.parse(JSON.parse(event.data).message); } catch (e) { return; }
+      // Edit-tab acks come back on the same channel; match those first.
+      if (editPending.has(ack.id)) {
+        const item = editPending.get(ack.id);
+        clearTimeout(item.timer);
+        editPending.delete(ack.id);
+        setEditStatus(ack.ok ? "ok" : "err", ack.message);
+        if (ack.ok) editDirty = false;
+        updateUpdateBtn();
+        buzz(ack.ok);
+        return;
+      }
       const item = pending.get(ack.id);
       if (!item) return;
       clearTimeout(item.timer);
@@ -204,7 +361,7 @@
   let lastSent = { code: null, at: 0 };
 
   async function send(code, how) {
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const id = newId();
     const usedSource = source;
     const entry = addEntry(code, usedSource, how);
     try {
@@ -277,9 +434,263 @@
     $("manualInput").placeholder = { amazon: "ASIN, UPC, or product name", walmart: "UPC, Walmart item #, or product name" }[source] || "UPC or product name";
   }
 
+  // ========================================================================
+  //  EDIT TAB
+  // ========================================================================
+  // The edit form is driven by whatever the PC sends on "<topic>-item":
+  //   { present, name, model, price, quantity, notes, condition, disclaimer,
+  //     includeMsrp, sqftCases, hasSqft, tags[], checklist{}, yesNo{}, config{} }
+  // The option lists (condition / checklist / accessories / disclaimer) ride
+  // in config, so this page always matches the PC without duplicating them.
+
+  let editConfig = null;          // last config the PC sent
+  let latestItem = null;          // last item payload the PC sent
+  let itemLoadedOnce = false;     // have we ever filled the form?
+  let editDirty = false;          // has the user changed anything since the last load?
+  let currentPresent = false;     // is an item open on the PC right now?
+  let requestTimer = null;
+
+  // live form state for the grid-style controls
+  let selCondition = "";
+  let selDisclaimer = "";
+  let checklistState = {};        // label -> bool
+  let yesNoState = {};            // label -> 'yes' | 'no' | null
+  let tagsState = [];             // free-typed tags
+
+  function setEditStatus(kind, text) {
+    const el = $("editStatus");
+    el.textContent = text || "";
+    el.className = "edit-status" + (kind ? " " + kind : "");
+  }
+
+  function markDirty() { editDirty = true; $("editBanner").hidden = true; updateUpdateBtn(); }
+
+  function updateUpdateBtn() { $("updateBtn").disabled = !currentPresent; }
+
+  function listenForItems() {
+    const events = new EventSource(RELAY + encodeURIComponent(topic + "-item") + "/sse");
+    events.onmessage = (event) => {
+      let payload;
+      try { payload = JSON.parse(JSON.parse(event.data).message); } catch (e) { return; }
+      if (!payload || typeof payload !== "object") return;
+      clearTimeout(requestTimer);
+      latestItem = payload;
+      if (payload.config) editConfig = payload.config;
+      // Don't stomp on edits in progress -- offer a banner instead. But if we
+      // just pressed Update (editPending not empty), this is the PC echoing our
+      // own change back, so take it rather than banner against ourselves.
+      if (editDirty && itemLoadedOnce && editPending.size === 0) {
+        setEditStatus("", "");
+        $("editBanner").hidden = false;
+        return;
+      }
+      fillEdit(payload);
+    };
+  }
+
+  function requestCurrentItem() {
+    if (!topic) return;
+    setEditStatus("wait", "Loading the PC's item…");
+    fetch(RELAY + encodeURIComponent(topic), { method: "POST", body: JSON.stringify({ id: newId(), type: "requestItem" }) })
+      .catch(() => {});
+    clearTimeout(requestTimer);
+    requestTimer = setTimeout(() => {
+      setEditStatus("err", "No answer from the Lister. Is it open on the PC?");
+    }, ACK_TIMEOUT_MS);
+  }
+
+  function fillEdit(payload) {
+    itemLoadedOnce = true;
+    editDirty = false;
+    $("editBanner").hidden = true;
+    currentPresent = !!payload.present;
+
+    if (!currentPresent) {
+      $("editForm").hidden = true;
+      $("editEmpty").hidden = false;
+      $("updateBar").hidden = tabName() !== "edit";
+      updateUpdateBtn();
+      setEditStatus("", "No item is open on the PC.");
+      return;
+    }
+
+    $("editEmpty").hidden = true;
+    $("editForm").hidden = false;
+    $("updateBar").hidden = tabName() !== "edit";
+
+    $("eName").value = payload.name || "";
+    $("ePrice").value = payload.price || "";
+    $("eQty").value = payload.quantity || "";
+    $("eModel").value = payload.model || "";
+    $("eNotes").value = payload.notes || "";
+    $("eMsrp").checked = !!payload.includeMsrp;
+    $("eCases").value = payload.sqftCases || "";
+    $("eCasesWrap").hidden = !payload.hasSqft && !payload.sqftCases;
+
+    selCondition = payload.condition || "";
+    selDisclaimer = payload.disclaimer || "";
+    checklistState = Object.assign({}, payload.checklist || {});
+    yesNoState = Object.assign({}, payload.yesNo || {});
+    tagsState = Array.isArray(payload.tags) ? payload.tags.slice() : [];
+
+    renderConditionPills();
+    renderYesNo();
+    renderChecklist();
+    renderDisclaimerPills();
+    renderTagChips();
+
+    updateUpdateBtn();
+    setEditStatus("ok", "Loaded. Edit, then Update Lister.");
+  }
+
+  function renderConditionPills() {
+    const box = $("eCondition");
+    box.innerHTML = "";
+    (editConfig && editConfig.conditionOptions || []).forEach((opt) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "pill"; b.textContent = opt;
+      b.setAttribute("aria-pressed", String(opt === selCondition));
+      b.addEventListener("click", () => {
+        selCondition = (selCondition === opt) ? "" : opt;  // tap again to clear
+        renderConditionPills(); markDirty();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function renderDisclaimerPills() {
+    const box = $("eDisclaimer");
+    box.innerHTML = "";
+    const opts = ["", ...((editConfig && editConfig.disclaimerOptions) || [])];
+    opts.forEach((opt) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "pill"; b.textContent = opt || "None";
+      b.setAttribute("aria-pressed", String(opt === selDisclaimer));
+      b.addEventListener("click", () => {
+        selDisclaimer = opt;
+        renderDisclaimerPills(); markDirty();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function renderChecklist() {
+    const box = $("eChecklist");
+    box.innerHTML = "";
+    (editConfig && editConfig.checkboxTags || []).forEach((label) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "pill"; b.textContent = label;
+      b.setAttribute("aria-pressed", String(!!checklistState[label]));
+      b.addEventListener("click", () => {
+        checklistState[label] = !checklistState[label];
+        b.setAttribute("aria-pressed", String(!!checklistState[label]));
+        markDirty();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function renderYesNo() {
+    const box = $("eYesNo");
+    box.innerHTML = "";
+    (editConfig && editConfig.yesNoRows || []).forEach((row) => {
+      const label = row[0];
+      const wrap = document.createElement("div");
+      wrap.className = "yn-row";
+      const name = document.createElement("span");
+      name.className = "yn-label"; name.textContent = label;
+      wrap.appendChild(name);
+      ["yes", "no"].forEach((val) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "yn-btn " + val; b.textContent = val === "yes" ? "Yes" : "No";
+        b.setAttribute("aria-pressed", String(yesNoState[label] === val));
+        b.addEventListener("click", () => {
+          yesNoState[label] = (yesNoState[label] === val) ? null : val;  // tap again to clear
+          renderYesNo(); markDirty();
+        });
+        wrap.appendChild(b);
+      });
+      box.appendChild(wrap);
+    });
+  }
+
+  function renderTagChips() {
+    const box = $("eTagChips");
+    box.innerHTML = "";
+    tagsState.forEach((tag, index) => {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.appendChild(document.createTextNode(tag));
+      const x = document.createElement("span");
+      x.className = "x"; x.textContent = "×";
+      x.addEventListener("click", () => { tagsState.splice(index, 1); renderTagChips(); markDirty(); });
+      chip.appendChild(x);
+      box.appendChild(chip);
+    });
+  }
+
+  function commitTagInput() {
+    const input = $("eTagInput");
+    const value = input.value.trim();
+    input.value = "";
+    if (value) { tagsState.push(value); renderTagChips(); markDirty(); }
+  }
+
+  function gatherEdit() {
+    return {
+      name: $("eName").value,
+      model: $("eModel").value,
+      price: $("ePrice").value,
+      quantity: $("eQty").value,
+      notes: $("eNotes").value,
+      condition: selCondition,
+      disclaimer: selDisclaimer,
+      includeMsrp: $("eMsrp").checked,
+      sqftCases: $("eCases").value,
+      tags: tagsState.slice(),
+      checklist: Object.assign({}, checklistState),
+      yesNo: Object.assign({}, yesNoState),
+    };
+  }
+
+  function onUpdateLister() {
+    if (!currentPresent) { setEditStatus("err", "Load an item from the PC first."); return; }
+    commitTagInput();  // fold any half-typed tag in
+    const id = newId();
+    setEditStatus("wait", "Sending to the Lister…");
+    fetch(RELAY + encodeURIComponent(topic), { method: "POST", body: JSON.stringify({ id, type: "edit", fields: gatherEdit() }) })
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); })
+      .then(() => {
+        editPending.set(id, {
+          timer: setTimeout(() => {
+            editPending.delete(id);
+            setEditStatus("err", "The Lister didn't answer. Is it open on the PC?");
+          }, ACK_TIMEOUT_MS),
+        });
+      })
+      .catch(() => setEditStatus("err", "Couldn't send. Check this phone's internet connection."));
+  }
+
+  // ========================================================================
+  //  TABS
+  // ========================================================================
+  function tabName() { return $("tabBtnEdit").getAttribute("aria-selected") === "true" ? "edit" : "scan"; }
+
+  function showTab(name) {
+    const edit = name === "edit";
+    $("tabBtnScan").setAttribute("aria-selected", String(!edit));
+    $("tabBtnEdit").setAttribute("aria-selected", String(edit));
+    $("tabScan").hidden = edit;
+    $("tabEdit").hidden = !edit;
+    $("updateBar").hidden = !edit;  // the sticky Update bar belongs to the edit tab only
+    onScanTab = !edit;  // pause the camera loop while editing (saves battery)
+    if (edit && !itemLoadedOnce) requestCurrentItem();
+  }
+
   // ---- camera scanning ------------------------------------------------------
   let stream = null;
   let scanning = false;
+  let onScanTab = true;
   let pausedUntil = 0;
   let lastError = { key: null, at: 0 };
   const canvas = document.createElement("canvas");
@@ -321,12 +732,10 @@
     };
   }
 
-  // Reads only the area inside the on-screen guide box (plus a margin), so a
-  // neighbouring item's barcode at the edge of the frame doesn't get sent.
   async function scanLoop() {
     const video = $("video");
     while (scanning) {
-      if (document.hidden || Date.now() < pausedUntil || !video.videoWidth) {
+      if (!onScanTab || document.hidden || Date.now() < pausedUntil || !video.videoWidth) {
         await sleep(200);
         continue;
       }
@@ -380,10 +789,26 @@
   function init() {
     renderStores();
     listenForAcks();
+    listenForItems();
+
+    $("tabBtnScan").addEventListener("click", () => showTab("scan"));
+    $("tabBtnEdit").addEventListener("click", () => showTab("edit"));
+    $("loadItemBtn").addEventListener("click", requestCurrentItem);
+    $("bannerLoadBtn").addEventListener("click", () => { if (latestItem) fillEdit(latestItem); });
+    $("updateBtn").addEventListener("click", onUpdateLister);
+
+    // Typing in the plain text fields marks the form dirty.
+    ["eName", "ePrice", "eQty", "eModel", "eNotes", "eCases"].forEach((id) => $(id).addEventListener("input", markDirty));
+    $("eMsrp").addEventListener("change", markDirty);
+    $("eTagInput").addEventListener("keydown", (event) => {
+      if (event.key === "," || event.key === "Enter") { event.preventDefault(); commitTagInput(); }
+      else if (event.key === "Backspace" && $("eTagInput").value === "" && tagsState.length > 0) {
+        tagsState.pop(); renderTagChips(); markDirty();
+      }
+    });
+    $("eTagInput").addEventListener("blur", commitTagInput);
 
     $("startBtn").addEventListener("click", startCamera);
-    // Most browsers allow starting straight away once camera permission has
-    // been granted before; if not, the "Start camera" button is the fallback.
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "camera" }).then((p) => { if (p.state === "granted") startCamera(); }).catch(() => {});
     }
@@ -408,8 +833,6 @@
 
     $("manualForm").addEventListener("submit", (event) => {
       event.preventDefault();
-      // Codes go uppercase; a product name (anything with a space) is sent
-      // as typed and becomes a store search on the PC.
       const raw = $("manualInput").value.trim().replace(/\s+/g, " ");
       const code = /\s/.test(raw) ? raw : raw.toUpperCase();
       if (!code) return;
