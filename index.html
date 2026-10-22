@@ -123,6 +123,7 @@
     padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
     background: rgba(183,121,31,.14); border: 1px solid var(--warn); color: var(--text); font-size: 14px; font-weight: 600;
   }
+  .edit-banner[hidden] { display: none; }  /* display:flex above would otherwise beat the hidden attribute */
   .edit-banner button { border: 0; border-radius: 8px; padding: 8px 12px; background: var(--warn); color: #fff; font-weight: 700; }
   .edit-empty { padding: 22px 16px; text-align: center; color: var(--muted); background: var(--panel);
                 border: 1px dashed var(--border); border-radius: 12px; }
@@ -445,6 +446,7 @@
 
   let editConfig = null;          // last config the PC sent
   let latestItem = null;          // last item payload the PC sent
+  let loadedSig = null;           // signature of the item we last filled from
   let itemLoadedOnce = false;     // have we ever filled the form?
   let editDirty = false;          // has the user changed anything since the last load?
   let currentPresent = false;     // is an item open on the PC right now?
@@ -465,6 +467,16 @@
 
   function markDirty() { editDirty = true; $("editBanner").hidden = true; updateUpdateBtn(); }
 
+  // A stable fingerprint of an item's editable fields, so a replayed or echoed
+  // copy of the item we already have doesn't get mistaken for a real change.
+  function itemSig(p) {
+    return JSON.stringify([
+      !!p.present, p.name || "", p.model || "", p.price || "", p.quantity || "",
+      p.notes || "", p.condition || "", p.disclaimer || "", !!p.includeMsrp, p.sqftCases || "",
+      Array.isArray(p.tags) ? p.tags : [], p.checklist || {}, p.yesNo || {},
+    ]);
+  }
+
   function updateUpdateBtn() { $("updateBtn").disabled = !currentPresent; }
 
   function listenForItems() {
@@ -476,6 +488,10 @@
       clearTimeout(requestTimer);
       latestItem = payload;
       if (payload.config) editConfig = payload.config;
+      // A connection reconnect makes ntfy replay the last item message, and an
+      // Update makes the PC echo the item back -- both identical to what we
+      // already have. Ignore those so they can't raise a false "changed" banner.
+      if (itemLoadedOnce && itemSig(payload) === loadedSig) return;
       // Don't stomp on edits in progress -- offer a banner instead. But if we
       // just pressed Update (editPending not empty), this is the PC echoing our
       // own change back, so take it rather than banner against ourselves.
@@ -502,6 +518,7 @@
   function fillEdit(payload) {
     itemLoadedOnce = true;
     editDirty = false;
+    loadedSig = itemSig(payload);
     $("editBanner").hidden = true;
     currentPresent = !!payload.present;
 
