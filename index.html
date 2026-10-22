@@ -101,7 +101,11 @@
     background: var(--panel); color: var(--accent); font-size: 16px; font-weight: 700;
   }
   .photo-btn { width: 100%; margin-bottom: 16px; }
+  .hd-sku-btn { border-color: var(--accent-dark); color: #fff; background: var(--accent); }
+  .capture-sku-btn { border-color: var(--ok); color: #fff; background: var(--ok); }
   #photoInput { display: none; }
+  /* In SKU mode the guide box frames the number instead of a barcode. */
+  .guide.sku { top: 38%; bottom: 38%; border-color: #ffd34d; }
 
   .log { display: flex; flex-direction: column; gap: 8px; }
   .entry { padding: 10px 12px; border-radius: 10px; background: var(--panel); border-left: 5px solid var(--border); }
@@ -204,6 +208,9 @@
 
       <button id="photoBtn" class="btn-outline photo-btn" type="button">Take a photo instead</button>
       <input id="photoInput" type="file" accept="image/*" capture="environment">
+
+      <button id="hdSkuBtn" class="btn-outline photo-btn hd-sku-btn" type="button">Read a Home Depot SKU</button>
+      <button id="captureSkuBtn" class="btn-outline photo-btn capture-sku-btn" type="button" hidden>Capture SKU</button>
 
       <p class="label">Or type it</p>
       <form class="row" id="manualForm" autocomplete="off">
@@ -752,7 +759,7 @@
   async function scanLoop() {
     const video = $("video");
     while (scanning) {
-      if (!onScanTab || document.hidden || Date.now() < pausedUntil || !video.videoWidth) {
+      if (!onScanTab || skuMode || document.hidden || Date.now() < pausedUntil || !video.videoWidth) {
         await sleep(200);
         continue;
       }
@@ -802,6 +809,119 @@
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+  // ---- Home Depot SKU from a label photo (on-device OCR) --------------------
+  // These orange liquidation labels print the HD SKU as text (the barcodes are
+  // internal lot/LPN codes), so she photographs the label and the phone reads
+  // the digits itself with Tesseract -- free, and the image never leaves the
+  // phone. The SKU is the 10-digit number (here starting "10"); we prefill it
+  // and let her eyeball it before Send, since OCR can slip a digit.
+
+  let ocrWorker = null;
+  let ocrLoading = null;
+
+  async function getOcrWorker() {
+    if (ocrWorker) return ocrWorker;
+    if (!ocrLoading) {
+      ocrLoading = (async () => {
+        const mod = await import("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/+esm");
+        const worker = await mod.createWorker("eng");
+        // The SKU is digits only -- whitelisting digits sharpens recognition.
+        await worker.setParameters({ tessedit_char_whitelist: "0123456789 " });
+        ocrWorker = worker;
+        return worker;
+      })();
+    }
+    return ocrLoading;
+  }
+
+  // Pick the SKU out of the numbers OCR found. On these labels the SKU is the
+  // 10-digit number starting "10" (the ASN is 8 digits, the barcode 9), so that
+  // rule picks it out even when the product description shares the line.
+  function extractSku(text) {
+    const nums = (text || "").match(/\d{6,}/g) || [];
+    // 1) a clean 10-digit token starting "10" (the normal case)
+    const exact = nums.find((n) => n.length === 10 && n.startsWith("10"));
+    if (exact) return exact;
+    // 2) OCR sometimes glues a neighbouring number on -- find a 10-digit "10…"
+    //    run inside a longer blob (e.g. "1005788778018" -> "1005788778")
+    for (const n of nums) {
+      const m = n.match(/10\d{8}/);
+      if (m) return m[0];
+    }
+    // 3) fall back to any 10-digit token, then the longest number seen
+    return nums.find((n) => n.length === 10) ||
+           nums.sort((a, b) => b.length - a.length)[0] ||
+           "";
+  }
+
+  // SKU capture reuses the live camera + guide box: full-label OCR is hopeless,
+  // but a tight crop of just the SKU reads reliably. She lines the SKU number up
+  // in the box and taps Capture; we OCR only the box region.
+  let skuMode = false;
+
+  function enterSkuMode() {
+    skuMode = true;
+    $("hdSkuBtn").textContent = "Cancel SKU capture";
+    $("captureSkuBtn").hidden = false;
+    $("guide").classList.add("sku");
+    setStatus("Fill the box with just the SKU number (the 10-digit one), then tap Capture SKU.");
+    if (!stream) startCamera();  // SKU capture needs the camera, same as barcodes
+  }
+
+  function exitSkuMode() {
+    skuMode = false;
+    $("hdSkuBtn").textContent = "Read a Home Depot SKU";
+    $("captureSkuBtn").hidden = true;
+    $("guide").classList.remove("sku");
+  }
+
+  async function captureSku() {
+    const video = $("video");
+    if (!video.videoWidth) { setStatus("Camera isn't ready yet — give it a second.", "err"); return; }
+    // Crop the guide-box region of the current frame and blow it up for OCR.
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const sx = Math.round(vw * 0.10), sw = Math.round(vw * 0.80);
+    const sy = Math.round(vh * 0.34), sh = Math.round(vh * 0.30);
+    const scale = 3;
+    const c = document.createElement("canvas");
+    c.width = sw * scale; c.height = sh * scale;
+    const cx = c.getContext("2d");
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
+    cx.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    try {
+      const data = cx.getImageData(0, 0, c.width, c.height);
+      const px = data.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const g = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
+        px[i] = px[i + 1] = px[i + 2] = g;  // grayscale helps the reader
+      }
+      cx.putImageData(data, 0, 0);
+    } catch (e) { /* ignore */ }
+
+    setStatus("Reading the SKU… (the first time also downloads the reader)");
+    try {
+      const worker = await getOcrWorker();
+      const result = await worker.recognize(c);
+      const sku = extractSku(result && result.data && result.data.text);
+      if (!sku) {
+        setStatus("Couldn't read a SKU. Get closer so just the number fills the box, hold steady, and tap Capture again.", "err");
+        buzz(false);
+        return;
+      }
+      exitSkuMode();
+      source = "homedepot";              // a SKU is always a Home Depot lookup
+      safeSet("scanSource", source);
+      renderStores();
+      $("manualInput").value = sku;
+      $("manualInput").focus();
+      setStatus("Read SKU " + sku + " — check it's right, then tap Send.", "ok");
+      buzz(true);
+    } catch (e) {
+      setStatus("Couldn't run the SKU reader (" + (e && e.message ? e.message : "error") + "). Check your connection, or type it below.", "err");
+      buzz(false);
+    }
+  }
+
   // ---- init -----------------------------------------------------------------
   function init() {
     renderStores();
@@ -829,6 +949,9 @@
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "camera" }).then((p) => { if (p.state === "granted") startCamera(); }).catch(() => {});
     }
+
+    $("hdSkuBtn").addEventListener("click", () => (skuMode ? exitSkuMode() : enterSkuMode()));
+    $("captureSkuBtn").addEventListener("click", captureSku);
 
     $("photoBtn").addEventListener("click", () => $("photoInput").click());
     $("photoInput").addEventListener("change", async function () {
